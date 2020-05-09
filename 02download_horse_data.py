@@ -7,11 +7,13 @@ import glob
 # from fake_useragent import UserAgent
 from bs4 import BeautifulSoup
 from pprint import pprint
+from param import P
+from tqdm import tqdm
 
 load_pickle = './shusso_horse.pickle'
 save_path = './tmp_data/'
 # headers = {'User-Agent': UserAgent().chrome}
-prefix = 'https://db.netkeiba.com/horse/'
+prefix = P['prefix_url']
 
 files = glob.glob(save_path + '*')
 if len(files) > 0 :
@@ -29,10 +31,8 @@ with open(load_pickle, 'rb') as f:
     horse_list = pickle.load(f)
 pprint(horse_list)
 
-for h in horse_list:
+for h in tqdm(horse_list):
     num = str(h[1]).zfill(2)
-    print('-'*20)
-    print(num)
     os.mkdir(save_path + num)
     h_save_dir = save_path + num
     # その馬自身のデータ取得
@@ -61,5 +61,3 @@ for h in horse_list:
     r_m.encoding = r_m.apparent_encoding
     with open(h_save_dir + '/' + 'mother.html', 'w', encoding=r.encoding) as f:
         f.write(r_m.text)
-
-

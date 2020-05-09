@@ -1,9 +1,10 @@
 from bs4 import BeautifulSoup
 import pickle
 from pprint import pprint
+from param import P
 
 # netkeiba.com の出走表を手動でダウンロードする
-load_html = './2020_tenno.html'
+load_html = P['race_file']
 writing_pickle = 'shusso_horse.pickle'
 
 with open(load_html, 'rb') as f:

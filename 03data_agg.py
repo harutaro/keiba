@@ -1,8 +1,10 @@
 import glob
 import pandas as pd
+import numpy as np
 from pprint import pprint
 from bs4 import BeautifulSoup
-thr = 3000
+import sys
+from param import P
 
 def history_scraper(fp):
     try: 
@@ -21,42 +23,61 @@ def history_scraper(fp):
         df = pd.DataFrame(each_row[1:], columns=col_name)
         # 今回は使うところのみ抜粋
         df_used = df[['レース名', '距離', '着順']].copy()
-        df_used.loc[df_used['着順'] == '失', '着順'] = '100'
-        df_used.loc[df_used['着順'] == '中', '着順'] = '100'
-        df_used.loc[df_used['着順'] == '除', '着順'] = '100'
-        df_used.loc[:, 'race_name_cvt'] = 1 # 初期化
-        df_used.loc[df_used['レース名'].str.contains('G3'), 'race_name_cvt'] = 2
-        df_used.loc[df_used['レース名'].str.contains('G2'), 'race_name_cvt'] = 4
-        df_used.loc[df_used['レース名'].str.contains('G1'), 'race_name_cvt'] = 8
+        df_used = df_used.rename(columns={'着順': 'OA'}) # order of arrival
+        df_used.loc[:, 'race_type'] = 'G4' # 初期化
+        df_used.loc[df_used['レース名'].str.contains('G3'), 'race_type'] = 'G3'
+        df_used.loc[df_used['レース名'].str.contains('G2'), 'race_type'] = 'G2'
+        df_used.loc[df_used['レース名'].str.contains('G1'), 'race_type'] = 'G1'
         df_used.loc[:, 'distance'] = 0 # 初期化
-        df_used['distance'] = df_used['距離'].str.extract('([0-9]{4})').astype(int)
-        df_used['top_point'] = df_used['着順'].astype(int)
-        df_used.loc[df_used['着順'].astype(int) >= 5, 'top_point'] = 1000
-        hyoka_data = df_used[df_used.distance >= thr]
-        score = (1 / hyoka_data.top_point) * hyoka_data.race_name_cvt
-        if len(score) == 0:
-            return 0
-        else:
-            return score.sum()
+        # !+! 例外処理に近い
+        df_used = df_used[df_used['距離'] != '']
+        # !+!  
+        df_used['distance'] = df_used['距離'].str.extract('([0-9]+)').astype(int)
+        df_used = df_used.drop(['距離', 'レース名'], axis = 1) # 無駄列排除
+        # 対象レース選択
+        df_target = df_used[(P['race_range'][0] <= df_used.distance) & \
+                            (df_used.distance < P['race_range'][1])].copy()
+        df_target['CP'] = 0 
+        df_target['GP'] = 1
+        df_target.loc[df_target.race_type == 'G1', 'GP'] = P['GP_G1']
+        df_target.loc[df_target.race_type == 'G2', 'GP'] = P['GP_G2']
+        df_target.loc[df_target.race_type == 'G3', 'GP'] = P['GP_G3']
+        df_target.loc[df_target.race_type == 'G4', 'GP'] = P['GP_G4']
+        # CP振り
+        df_target.loc[df_target.OA == '1', 'CP'] = P['CP_1'] 
+        df_target.loc[df_target.OA == '2', 'CP'] = P['CP_2'] 
+        df_target.loc[df_target.OA == '3', 'CP'] = P['CP_3'] 
+        df_target.loc[df_target.OA == '4', 'CP'] = P['CP_4'] 
+        df_target.loc[df_target.OA == '5', 'CP'] = P['CP_5'] 
+        score = (df_target.GP*df_target.CP).sum()/len(df_target)
+        if np.isnan(score):
+            score = 0
+        return score
 
     except AttributeError:
         return 0
-    
-
 
 data_path = sorted(glob.glob('./tmp_data/*'))
 order = ['self.html', 'father.html', 'mother.html']
-sorting = []
+df = pd.DataFrame(columns=['num'] + order) # 空のデータフレーム
+# 計算
 for d in data_path:
-    print('------')
     number = d.split('/')[-1]
-    ts = [] # total_score
+    data = {'num':number, order[0]:0, order[1]:0, order[2]:0}
     for o in order:
         fp = d + '/' + o
         score = history_scraper(fp)
-        print(f'{o} {score}')
-        ts.append(score)
-    final = 0.5*ts[0] + 0.25*ts[1] + 0.25*ts[2]
-    sorting.append([number, final])
+        data[o] = score
+    df = df.append(data, ignore_index=True)
 
-pprint(sorting)
+# 正規化
+df['self_nrmd'] = df['self.html'] / df['self.html'].max()
+df['father_nrmd'] = df['father.html'] / df['father.html'].max()
+df['mother_nrmd'] = df['mother.html'] / df['mother.html'].max()
+df['final_score'] = df.self_nrmd*P['w_s'] + df.father_nrmd*P['w_f'] + df.mother_nrmd*P['w_m']
+# 結果
+print('------------------')
+print(f'レース距離:{P["race_dist"]}')
+print(f'searched range:{P["race_range"]}')
+print(f'weights-> w_s:{P["w_s"]}, w_f:{P["w_f"]}, w_m:{P["w_m"]}')
+print(df.sort_values('final_score').to_string(index=False)) # index を表示しない
